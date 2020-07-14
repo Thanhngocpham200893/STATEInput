@@ -23,24 +23,32 @@ class STATE_Input:
         self.natm        = get_natm( atoms )
         self.space_group = space_group()
         self.control     = control()
-        self.system      = system ()        #constains encut, smearing, spin, xctype, etc (try to duplicate the way QE works)
+        self.system      = system ()        #constains encut, smearing, spin, xctype, etc 
         self.kpoints     = kpoints()        #at present, only automatic kpoint is accepted
         self.electrons   = electrons ()    
         self.ions        = ions ()    
         self.pseudo      = pseudo (atoms)     
+        self.constraints  = constraints (atoms)
     def write_input (self,filename):
         write_state_input (self,filename)
 
 class system:
     def __init__(self):
-        self.gmax  = 6
-        self.gmaxp = 20
-        self.width = -0.002 
-        self.xctype = 'ggapbe'
-        self.kspin = 1
-        self.nbztyp = 102
-        self.ncord = 1
-        self.ninv =  0
+        self.gmax    = 6
+        self.gmaxp   = 20
+        self.width   = -0.002 
+        self.xctype  = 'ggapbe'
+        self.kspin   = 1
+        self.nbztyp  = 102
+        self.ncord   = 1
+        self.ninv    =  0
+        self.edelta  = 2e-9
+        self.forccr  = 1e-3
+        self.istress = 0
+        self.destm   = 1.00
+        self.nbztyp  = 102
+        self.keg     = 0  #specify by yourself  
+        self.npdosao     = 0  #specify by yourself  
 
 class control:
     def __init__(self):
@@ -65,7 +73,10 @@ class electrons:
 
 class ions:
     def __init__(self):
-        self.nmd2  = 200  # blugel
+        self.nmd2   = 200   
+        self.imdalg = 2 
+        self.dtio   = 100  
+        self.iexpl   = 1 
 
 class space_group:
     def __init__(self):
@@ -88,6 +99,14 @@ class pseudo:
         self.iloc  = np.ones(get_ntyp(atoms),dtype = int)
         self.ivan  = np.ones(get_ntyp(atoms),dtype = int)
         self.zeta  = np.zeros(get_ntyp(atoms),dtype = float)
+
+class constraints:
+    """
+    Store the constraints in imdtyp numpy array 
+    imdtyp == 1 ==> relax all
+    """
+    def __init__(self,atoms):
+        self.imdtyp = np.ones(get_natm(atoms),dtype = int)
 
 #def print_pseudo ( atoms, filename ):
 #    atm_species =  get_reduce_atom_list(atoms)
@@ -188,7 +207,7 @@ def print_cps ( atoms, filename ):
     atm_species =  get_reduce_atom_list(atoms)
     cps         =  atoms.get_positions()
     ityp        =  np.ones( katm,dtype = int)
-    imdtyp      =  np.ones( katm,dtype = int)
+#    imdtyp      =  np.ones( katm,dtype = int)
     ityp_list   =  atoms.get_chemical_symbols()
 
     for i in range(len(atm_species)):
@@ -219,7 +238,25 @@ def write_state_input (object, filename):
                    object.kpoints.kpoints_shift[2]),file = inp)
         print ('%4i %4i :    num_space_group, type' 
                  %(object.system.ncord, object.system.ninv),file = inp)
-        print_cps(object.atoms,inp)
+#        print_cps(object.atoms,inp)
+        katm        =  object.natm
+        atm_species =  get_reduce_atom_list(object.atoms)
+        cps         =  object.atoms.get_positions()
+        ityp        =  np.ones( katm,dtype = int)
+        ityp_list   =  object.atoms.get_chemical_symbols()
+        imdtyp      =  object.constraints.imdtyp
+        
+        for i in range(len(atm_species)):
+            for j in range(katm):
+                if ityp_list[j] == atm_species[i]:
+                    ityp[j] = i+1
+
+        for i in range(katm):
+            print("% 16.12f   % 16.12f   % 16.12f %3s  %3s  %3s"
+                  %(cps[i,0],cps[i,1],cps[i,2],1,imdtyp[i], ityp[i]), file = inp)
+
+
+
         atm_species =  get_reduce_atom_list(object.atoms)
         for i in range(len(atm_species)):
             print('% 4.2f  % 4.2f  % 4.2f  % 2s   % 2s   % 4.2f '
@@ -229,15 +266,51 @@ def write_state_input (object, filename):
                    object.pseudo.iloc[i],
                    object.pseudo.ivan[i],
                    object.pseudo.zeta[i] ),file=inp)
-        print ('% 4i % 4i % 4i % 4i % 4i  : icond, inipos, inivel, ininos, iniacc'
+        print ('% 4i  % 4i  % 4i  % 4i  % 4i  : icond, inipos, inivel, ininos, iniacc'
                  %(object.control.icond,
                    object.control.inipos,
                    object.control.inivel,
                    object.control.ininos,
                    object.control.iniacc),file = inp)
         print ('   0    1   :  ipre ipri', file = inp)
-        print ('%4i    %4i   0   %4i %4i :nmd1 nmd2 last_iter,cpumax,ifstop' 
+        print ('% 4i  % 4i  0  % 4i  % 4i  :nmd1 nmd2 last_iter,cpumax,ifstop' 
                  %(object.electrons.nmd1,
-                   object.control.cpumax,
                    object.ions.nmd2,
+                   object.control.cpumax,
                    object.control.ifstop),file = inp)
+        print ('% 4i  % 4i :simple=1,broyd1 =2,broyd2=3,DFP=4,PULAY=5,blugel =6' 
+                 %(object.electrons.mixing_mode,
+                   object.electrons.mixing_what),file = inp)
+        print ('% 4i  % 4i  % 4.2f :iter_start,kbmix,mix_alpha' 
+                 %(object.electrons.iter_start,
+                   object.electrons.kbxmix,
+                   object.electrons.mix_alpha),file = inp)
+        print ('0.20 0.30 0.20 0.20 0.20 : dtim1,dtim2, dtim3, dtim4, dtim',file = inp) #obselote
+        print ('% 6.2f  % 4i  % 4i  % 6.3e  : dtio, imdalg, iexpl, edelta' 
+                 %(object.ions.dtio,
+                   object.ions.imdalg,
+                   object.ions.iexpl,
+                   object.system.edelta), file = inp)
+        print ('% 8.4f  % 6.3e  % 4i : width,forccr,istress' 
+                 %(object.system.width,
+                   object.system.forccr,
+                   object.system.istress),file = inp)
+        print ('%14s  % 4i  : xctype,kspin'
+                 %(object.system.xctype,object.system.kspin),file = inp) 
+        print ('%  6.3f   : destm'
+                 %(object.system.destm),file = inp) 
+        print ('% 7i  : nbztyp'
+                 %(object.system.nbztyp),file = inp) 
+        print ('       4    4    4', file = inp)
+        print ('       4    4    4', file = inp)
+        print ('% 8i :    keg      ' %(object.system.keg), file = inp)
+        print ('% 8i :    nextst   ' %(object.electrons.nextst), file = inp)
+        print ('       0 : 0 random_numbers 1 matrix  ', file = inp)
+        print ('% 8i :    imsd   ' %(object.electrons.imsd), file = inp)
+        print ('       0 : evaluate_eko_diff ', file = inp)
+        print ('% 8i :    npdosao     ' %(object.system.npdosao), file = inp)
+        print ('        0    0.0  ', file = inp)
+        print ('&VDW-DF', file = inp)
+        print ('nqs 20', file = inp)
+        print ('qcut 10.d0', file = inp)
+        print ('&END', file = inp)
