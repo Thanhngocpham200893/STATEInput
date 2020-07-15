@@ -253,7 +253,7 @@ def write_state_input (object, filename):
 
         for i in range(katm):
             print("% 16.12f   % 16.12f   % 16.12f %3s  %3s  %3s"
-                  %(cps[i,0],cps[i,1],cps[i,2],1,imdtyp[i], ityp[i]), file = inp)
+                  %(cps[i,0]*ang2bohr,cps[i,1]*ang2bohr,cps[i,2]*ang2bohr,1,imdtyp[i], ityp[i]), file = inp)
 
 
 
